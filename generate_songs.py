@@ -10,9 +10,9 @@ output_directory = "generated"
 model_directory = "model"
 gcs_bucket_name = "knots-audio-processing"
 tfrecord_path = os.path.join("gs://", gcs_bucket_name,"audio_data.tfrecord")
-timesteps = 50
+timesteps = 200
 n_mels = 128
-song_length = 100  # in timesteps
+song_length = 600  # in timesteps
 n_songs = 2
 read_local = False
 write_local = False
@@ -63,7 +63,6 @@ def save_to_gcs(bucket_name, file_path, destination_path):
     os.remove(file_path)
 
 
-
 if __name__ == '__main__':
     strategy = check_use_tpu()
 
@@ -74,12 +73,11 @@ if __name__ == '__main__':
         model = tf.keras.models.load_model(model_directory)
 
     if not write_local:
-        output_directory = os.path.join("gs://", gcs_bucket_name, output_directory)
         client = storage.Client()
-
+    else:
+        os.makedirs(output_directory, exist_ok=True)
 
     print("Generating new songs...")
-    os.makedirs(output_directory, exist_ok=True)
 
     global_batch_size = 1 * strategy.num_replicas_in_sync
     dist_dataset = strategy.experimental_distribute_datasets_from_function(
