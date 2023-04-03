@@ -43,9 +43,8 @@ else:
 print("Building and training the model...")
 with strategy.scope():
     model = Sequential()
-    model.add(LSTM(2048, input_shape=(timesteps, n_mels), return_sequences=True))
-    model.add(LSTM(2048, return_sequences=True))
-    model.add(LSTM(2048))
+    model.add(LSTM(3072, input_shape=(timesteps, n_mels), return_sequences=True))
+    model.add(LSTM(3072))
     model.add(Dense(n_mels))
     model.add(Activation("linear"))
 
