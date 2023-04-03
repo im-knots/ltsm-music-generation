@@ -10,7 +10,7 @@ import threading
 input_directory = "audio"
 write_local = True
 sr = 22050
-timesteps = 50
+timesteps = 200
 n_mels = 128
 num_workers = 8
 overlap = 50
@@ -55,6 +55,7 @@ def process_file(filename):
     data = []
     for i in range(0, log_mel_spectrogram.shape[1] - timesteps, overlap):
         data.append((log_mel_spectrogram[:, i : i + timesteps].T, log_mel_spectrogram[:, i + timesteps]))
+
     return data
 
 def process_and_save_data():
