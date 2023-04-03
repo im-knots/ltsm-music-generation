@@ -1,4 +1,4 @@
-# Audio Processing with TensorFlow
+# LTSM Music Generation
 
 This project consists of three Python scripts that work together to process audio files, train a model using the processed data, and generate new songs based on the trained model.
 
