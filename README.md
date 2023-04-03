@@ -66,7 +66,7 @@ The preprocessing stage involves the following steps:
 The model training stage consists of the following steps:
 
 1. **Environment setup**: The appropriate computing environment is configured based on the selected device (TPU, GPU, or CPU).
-2. **LSTM model construction**: A Keras-based LSTM model is built, comprising multiple LSTM layers, dropout layers, and a final Dense layer with linear activation. The model is compiled using the Adam optimizer and Mean Squared Error (MSE) loss function.
+2. **LSTM model construction**: A Keras-based LSTM model is built, comprising multiple LSTM layers and a final Dense layer with linear activation. The model is compiled using the Adam optimizer and Mean Squared Error (MSE) loss function.
 3. **Dataset loading**: The dataset is loaded from the TFRecord file, parsed, shuffled, batched, and repeated to form an infinite stream of input-target pairs.
 4. **Model training**: The LSTM model is trained on the dataset for a specified number of epochs and steps per epoch.
 5. **Model saving**: The trained model is saved to a specified directory for use in song generation.
