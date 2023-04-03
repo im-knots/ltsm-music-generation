@@ -1,16 +1,17 @@
 import os
 import tensorflow as tf
-from keras.layers import LSTM, Dense, Activation, Dropout
+from keras.layers import LSTM, Dense, Activation
 from keras.models import Sequential
 
 # Parameters
 read_local = False
 model_directory = "model"
-timesteps = 50
+timesteps = 200
 n_mels = 128
-epochs = 10
+epochs = 25
 batch_size = 2048
 use_tpu = True
+validation_split = 0.2
 
 if read_local:
     tfrecord_file = "audio_data.tfrecord"
@@ -18,14 +19,14 @@ else:
     gcs_bucket = "gs://knots-audio-processing"
     tfrecord_file = os.path.join(gcs_bucket, "audio_data.tfrecord")
 
-
+# Environment setup
 print("Setting up the environment...")
 if use_tpu:
     try:
-      tpu = tf.distribute.cluster_resolver.TPUClusterResolver()  # TPU detection
-      print('Running on TPU ', tpu.cluster_spec().as_dict()['worker'])
+        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()  # TPU detection
+        print('Running on TPU ', tpu.cluster_spec().as_dict()['worker'])
     except ValueError:
-      raise BaseException('ERROR: Not connected to a TPU runtime; please see the previous cell in this notebook for instructions!')
+        raise BaseException('ERROR: Not connected to a TPU runtime; please see the previous cell in this notebook for instructions!')
 
     tf.config.experimental_connect_to_cluster(tpu)
     tf.tpu.experimental.initialize_tpu_system(tpu)
@@ -38,20 +39,18 @@ else:
     else:
         strategy = tf.distribute.OneDeviceStrategy("CPU:0")
 
-
+# Model building and training
 print("Building and training the model...")
 with strategy.scope():
     model = Sequential()
     model.add(LSTM(2048, input_shape=(timesteps, n_mels), return_sequences=True))
-    model.add(Dropout(0.5))
     model.add(LSTM(2048, return_sequences=True))
-    model.add(Dropout(0.5))
     model.add(LSTM(2048))
     model.add(Dense(n_mels))
     model.add(Activation("linear"))
 
     model.compile(optimizer="adam", loss="mse")
-    
+
     # Load the dataset from the TFRecord file
     def parse_example(example_proto):
         feature_description = {
@@ -61,12 +60,19 @@ with strategy.scope():
         parsed_example = tf.io.parse_single_example(example_proto, feature_description)
         return parsed_example['input'], parsed_example['target']
 
-    dataset = tf.data.TFRecordDataset(tfrecord_file).map(parse_example)
-    dataset = dataset.shuffle(buffer_size=10000).batch(batch_size).repeat()
+    dataset = tf.data.TFRecordDataset(tfrecord_file).map(parse_example).shuffle(buffer_size=10000)
+
+    # Calculate the number of batches for the validation split
+    num_val_samples = int(validation_split * 10000)
+
+    # Split the dataset into training and validation sets
+    val_dataset = dataset.take(num_val_samples).batch(batch_size).repeat()
+    train_dataset = dataset.skip(num_val_samples).batch(batch_size).repeat()
 
     # Train the model
-    model.fit(dataset, epochs=epochs, steps_per_epoch=100)
+    model.fit(train_dataset, epochs=epochs, steps_per_epoch=100, validation_data=val_dataset, validation_steps=25)
 
+# Save the model
 print("Saving the model...")
 if use_tpu and not read_local:
     model_directory = os.path.join(gcs_bucket, model_directory)
