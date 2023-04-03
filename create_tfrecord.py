@@ -1,88 +1,112 @@
 import os
 import numpy as np
-import librosa
 import tensorflow as tf
-import concurrent.futures
-import matplotlib.pyplot as plt
-import threading
+from scipy.io.wavfile import write
+import librosa
+from google.cloud import storage
 
 # Parameters
-input_directory = "audio"
-write_local = True
-sr = 22050
+output_directory = "generated"
+model_directory = "model"
+gcs_bucket_name = "knots-audio-processing"
+tfrecord_path = os.path.join("gs://", gcs_bucket_name,"audio_data.tfrecord")
 timesteps = 50
 n_mels = 128
-num_workers = 8
-overlap = 50
-spectrogram_directory = "spectrograms"
+song_length = 100  # in timesteps
+n_songs = 2
+read_local = False
+write_local = False
+use_tpu = True
+sr = 22050
 
-save_spectrogram_lock = threading.Lock()
+def check_use_tpu():
+    print("Setting up the environment...")
+    if use_tpu:
+        try:
+            tpu = tf.distribute.cluster_resolver.TPUClusterResolver()  # TPU detection
+            print('Running on TPU ', tpu.cluster_spec().as_dict()['worker'])
+        except ValueError:
+            raise BaseException('ERROR: Not connected to a TPU runtime; please see the previous cell in this notebook for instructions!')
 
-def create_example(input_data, target_data):
-    feature = {
-        'input': tf.train.Feature(float_list=tf.train.FloatList(value=input_data.flatten())),
-        'target': tf.train.Feature(float_list=tf.train.FloatList(value=target_data.flatten()))
+        tf.config.experimental_connect_to_cluster(tpu)
+        tf.tpu.experimental.initialize_tpu_system(tpu)
+        strategy = tf.distribute.TPUStrategy(tpu)
+
+    else:
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            strategy = tf.distribute.OneDeviceStrategy("GPU:0")
+        else:
+            strategy = tf.distribute.OneDeviceStrategy("CPU:0")
+    return strategy
+
+def parse_example(example_proto):
+    feature_description = {
+        "input": tf.io.FixedLenFeature([timesteps, n_mels], tf.float32),
+        "target": tf.io.FixedLenFeature([n_mels], tf.float32),
     }
-    return tf.train.Example(features=tf.train.Features(feature=feature))
+    parsed_features = tf.io.parse_single_example(example_proto, feature_description)
+    return parsed_features["input"], parsed_features["target"]
 
-def create_tfrecord_file(data, tfrecord_filename):
-    with tf.io.TFRecordWriter(tfrecord_filename) as writer:
-        for input_data, target_data in data:
-            example = create_example(input_data, target_data)
-            writer.write(example.SerializeToString())
-    print(f"Creating tfrecord file {tfrecord_filename}")
+def audio_data_generator(tfrecord_path, batch_size=1):
+    dataset = tf.data.TFRecordDataset(tfrecord_path)
+    dataset = dataset.map(parse_example)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    dataset = dataset.repeat()
+    return dataset
 
-def save_spectrogram(log_mel_spectrogram, output_path):
-    with save_spectrogram_lock:
-        plt.figure(figsize=(10, 4))
-        plt.imshow(log_mel_spectrogram, aspect="auto", origin="lower")
-        plt.colorbar()
-        plt.tight_layout()
-        plt.savefig(output_path)
-        plt.close()
-
-def process_file(filename):
-    print(f"Processing file: {filename}")
-    audio, _ = librosa.load(os.path.join(input_directory, filename), sr=sr)
-    spectrogram = np.abs(librosa.stft(audio))
-    mel_spectrogram = librosa.feature.melspectrogram(S=spectrogram, sr=sr, n_mels=n_mels)
-    log_mel_spectrogram = librosa.power_to_db(mel_spectrogram)
-    
-    # Save the mel-spectrogram as a .jpeg image
-    os.makedirs(spectrogram_directory, exist_ok=True)
-    save_spectrogram(log_mel_spectrogram, os.path.join(spectrogram_directory, f"{os.path.splitext(filename)[0]}.jpeg"))
-    
-    data = []
-    for i in range(0, log_mel_spectrogram.shape[1] - timesteps, overlap):
-        data.append((log_mel_spectrogram[:, i : i + timesteps].T, log_mel_spectrogram[:, i + timesteps]))
-    return data
-
-def process_and_save_data():
-    input_data = []
-    target_data = []
-
-    audio_files = [filename for filename in os.listdir(input_directory) if filename.endswith(".flac")]
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-        for file_data in executor.map(process_file, audio_files):
-            for inp, tgt in file_data:
-                input_data.append(inp)
-                target_data.append(tgt)
-
-    data = list(zip(input_data, target_data))
-    create_tfrecord_file(data, tfrecord_filename)
-
-def upload_to_gcs():
+def save_to_gcs(bucket_name, file_path, destination_path):
     bucket = client.get_bucket(bucket_name)
-    blob = bucket.blob(tfrecord_filename)
-    blob.upload_from_filename(tfrecord_filename)
+    blob = bucket.blob(destination_path)
+    blob.upload_from_filename(file_path)
+    os.remove(file_path)
 
-# Set the output path for the TFRecord file
-if write_local:
-    tfrecord_filename = "audio_data.tfrecord"
-    process_and_save_data()
-else:
-    gcs_bucket = "gs://your-bucket-name"
-    tfrecord_filename = os.path.join(gcs_bucket, "audio_data.tfrecord")
-    process_and_save_data()
-    upload_to_gcs()
+
+if __name__ == '__main__':
+    strategy = check_use_tpu()
+
+    if not read_local:
+        model_directory = os.path.join("gs://", gcs_bucket_name, model_directory)
+        model = tf.keras.models.load_model(model_directory)
+    else:
+        model = tf.keras.models.load_model(model_directory)
+
+    if not write_local:
+        client = storage.Client()
+    else:
+        os.makedirs(output_directory, exist_ok=True)
+
+    print("Generating new songs...")
+
+    global_batch_size = 1 * strategy.num_replicas_in_sync
+    dist_dataset = strategy.experimental_distribute_datasets_from_function(
+        lambda _: audio_data_generator(tfrecord_path, global_batch_size)
+    )
+
+    for i in range(n_songs):
+        input_data = next(iter(dist_dataset))
+        seed = input_data[0].values[0].numpy()[0]
+
+        generated_spectrogram = []
+
+        for _ in range(song_length):
+            prediction = model.predict(seed.reshape(1, timesteps, n_mels))
+            generated_spectrogram.append(prediction[0])
+            seed = np.vstack((seed[1:], prediction))
+
+        generated_mel_spectrogram = np.array(generated_spectrogram).T
+        generated_power_spectrogram = librosa.db_to_power(generated_mel_spectrogram)
+        generated_spectrogram = librosa.feature.inverse.mel_to_stft(generated_power_spectrogram, sr=sr)
+        generated_audio = librosa.griffinlim(generated_spectrogram)
+
+        if write_local:
+            output_filename = os.path.join(output_directory, f"generated_song_{i + 1}.wav")
+            write(output_filename, sr, generated_audio.astype(np.float32))
+        else:
+            output_filename = f"generated_song_{i + 1}.wav"
+            write(output_filename, sr, generated_audio.astype(np.float32))
+            destination_path = os.path.join(output_directory, output_filename)
+            save_to_gcs(gcs_bucket_name, output_filename, destination_path)
+
+    print(f"Generated {n_songs} songs in the '{output_directory}' directory.")
