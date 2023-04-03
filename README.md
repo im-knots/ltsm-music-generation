@@ -1,5 +1,7 @@
 # LTSM Music Generation
 
+PLEASE NOTE THIS IS A WORK IN PROGRESS. I HAVENT FIGURED OUT HOW TO TUNE THE MODEL FULLY YET :D
+
 This project consists of three Python scripts that work together to process audio files, train a model using the processed data, and generate new songs based on the trained model.
 
 ## Scripts
