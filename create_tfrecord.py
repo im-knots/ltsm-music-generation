@@ -3,6 +3,8 @@ import numpy as np
 import librosa
 import tensorflow as tf
 import concurrent.futures
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import threading
 
@@ -10,7 +12,7 @@ import threading
 input_directory = "audio"
 write_local = True
 sr = 22050
-timesteps = 200
+timesteps = 1000
 n_mels = 128
 num_workers = 8
 overlap = 50
