@@ -11,7 +11,7 @@ model_directory = "model"
 timesteps = 5000
 n_mels = 128
 epochs = 10
-batch_size = 64
+batch_size = 80
 use_tpu = True
 validation_split = 0.2
 
@@ -88,7 +88,7 @@ with strategy.scope():
     dataset = tf.data.TFRecordDataset(tfrecord_file).map(parse_example).shuffle(buffer_size=10000)
 
     # Calculate the number of batches for the validation split
-    num_val_samples = int(validation_split * 10000)
+    num_val_samples = int(validation_split * total_samples)
 
     # Split the dataset into training and validation sets
     val_dataset = dataset.take(num_val_samples).batch(batch_size).repeat()
