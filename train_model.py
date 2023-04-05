@@ -64,11 +64,13 @@ with strategy.scope():
     # Load the dataset from the TFRecord file
     def parse_example(example_proto):
         feature_description = {
-            'input': tf.io.FixedLenFeature([timesteps, n_mels], tf.float32),
-            'target': tf.io.FixedLenFeature([n_mels], tf.float32)
+            'input': tf.io.FixedLenFeature([timesteps * n_mels], tf.float32),
+            'target': tf.io.FixedLenFeature([n_mels * timesteps], tf.float32)
         }
         parsed_example = tf.io.parse_single_example(example_proto, feature_description)
-        return parsed_example['input'], parsed_example['target']
+        input_data = tf.reshape(parsed_example['input'], (timesteps, n_mels))
+        target_data = tf.reshape(parsed_example['target'], (timesteps, n_mels))
+        return input_data, target_data
 
     dataset = tf.data.TFRecordDataset(tfrecord_file).map(parse_example).shuffle(buffer_size=10000)
 
