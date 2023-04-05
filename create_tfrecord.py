@@ -12,11 +12,12 @@ import threading
 input_directory = "audio"
 write_local = True
 sr = 22050
-timesteps = 1000
+timesteps = 5000
 n_mels = 128
 num_workers = 8
 overlap = 50
 spectrogram_directory = "spectrograms"
+shift = 100  # Number of frames to shift the target spectrogram
 
 save_spectrogram_lock = threading.Lock()
 
@@ -55,8 +56,10 @@ def process_file(filename):
     save_spectrogram(log_mel_spectrogram, os.path.join(spectrogram_directory, f"{os.path.splitext(filename)[0]}.jpeg"))
 
     data = []
-    for i in range(0, log_mel_spectrogram.shape[1] - timesteps, overlap):
-        data.append((log_mel_spectrogram[:, i : i + timesteps].T, log_mel_spectrogram[:, i + timesteps]))
+    for i in range(0, log_mel_spectrogram.shape[1] - timesteps - shift, overlap):
+        input_data = log_mel_spectrogram[:, i : i + timesteps].T
+        target_data = log_mel_spectrogram[:, i + shift : i + timesteps + shift].T
+        data.append((input_data, target_data))
 
     return data
 
