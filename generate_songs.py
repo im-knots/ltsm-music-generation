@@ -9,15 +9,16 @@ from google.cloud import storage
 output_directory = "generated"
 model_directory = "model"
 gcs_bucket_name = "knots-audio-processing"
-tfrecord_path = os.path.join("gs://", gcs_bucket_name,"audio_data.tfrecord")
-timesteps = 1000
+tfrecord_path = os.path.join("gs://", gcs_bucket_name, "audio_data.tfrecord")
+timesteps = 5000
 n_mels = 128
-song_length = 3000  # in timesteps
+song_length = 8000  # in timesteps
 n_songs = 2
 read_local = False
 write_local = False
 use_tpu = True
 sr = 22050
+prediction_shift = 10
 
 def check_use_tpu():
     print("Setting up the environment...")
@@ -90,10 +91,11 @@ if __name__ == '__main__':
 
         generated_spectrogram = []
 
-        for _ in range(song_length):
-            prediction = model.predict(seed.reshape(1, timesteps, n_mels))
-            generated_spectrogram.append(prediction[0])
-            seed = np.vstack((seed[1:], prediction))
+        for step in range(song_length):
+            if step % prediction_shift == 0:
+                prediction = model.predict(seed.reshape(1, timesteps, n_mels))
+                generated_spectrogram.extend(prediction[:prediction_shift])
+                seed = np.vstack((seed[prediction_shift:], prediction[:prediction_shift]))
 
         generated_mel_spectrogram = np.array(generated_spectrogram).T
         generated_power_spectrogram = librosa.db_to_power(generated_mel_spectrogram)
