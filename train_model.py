@@ -6,10 +6,10 @@ from keras.models import Sequential
 # Parameters
 read_local = False
 model_directory = "model"
-timesteps = 1000
+timesteps = 5000
 n_mels = 128
 epochs = 25
-batch_size = 512
+batch_size = 1024
 use_tpu = True
 validation_split = 0.2
 
@@ -43,8 +43,8 @@ else:
 print("Building and training the model...")
 with strategy.scope():
     model = Sequential()
-    model.add(LSTM(1024, input_shape=(timesteps, n_mels), return_sequences=True))
-    model.add(LSTM(1024))
+    model.add(LSTM(3072, input_shape=(timesteps, n_mels), return_sequences=True))
+    model.add(LSTM(3072))
     model.add(Dense(n_mels))
     model.add(Activation("linear"))
 
