@@ -1,7 +1,8 @@
 import os
 import tensorflow as tf
-from keras.layers import LSTM, Dense, Activation
+from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Input, Activation, Add, Lambda, Attention, LayerNormalization
 from keras.models import Sequential
+from keras import Model
 
 # Parameters
 read_local = False
@@ -42,12 +43,22 @@ else:
 # Model building and training
 print("Building and training the model...")
 with strategy.scope():
-    model = Sequential()
-    model.add(LSTM(3072, input_shape=(timesteps, n_mels), return_sequences=True))
-    model.add(LSTM(3072))
-    model.add(Dense(n_mels))
-    model.add(Activation("linear"))
+    input_layer = Input(shape=(timesteps, n_mels))
+    lstm1 = Bidirectional(LSTM(512, return_sequences=True, kernel_initializer='he_normal'))(input_layer)
+    lstm1_ln = LayerNormalization()(lstm1)
 
+    attention = Attention()([lstm1_ln, lstm1_ln])
+    lstm2 = LSTM(1024, return_sequences=True, kernel_initializer='he_normal')(attention)
+    lstm2_ln = LayerNormalization()(lstm2)
+
+    # Residual connection
+    lstm2_add = Add()([lstm1_ln, lstm2_ln])
+
+    lstm3 = LSTM(512, kernel_initializer='he_normal')(lstm2_add)
+    lstm3_ln = LayerNormalization()(lstm3)
+    output_layer = Dense(n_mels, activation="linear")(lstm3_ln)
+
+    model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(optimizer="adam", loss="mse")
 
     # Load the dataset from the TFRecord file
