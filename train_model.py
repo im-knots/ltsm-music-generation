@@ -3,14 +3,15 @@ import tensorflow as tf
 from keras.layers import LSTM, Dense, TimeDistributed, Bidirectional, Input, Activation, Add, Lambda, Attention, LayerNormalization
 from keras.models import Sequential
 from keras import Model
+from keras.callbacks import ModelCheckpoint  # Add this import
 
 # Parameters
 read_local = False
 model_directory = "model"
 timesteps = 5000
 n_mels = 128
-epochs = 25
-batch_size = 8
+epochs = 10
+batch_size = 4
 use_tpu = True
 validation_split = 0.2
 
@@ -81,8 +82,13 @@ with strategy.scope():
     val_dataset = dataset.take(num_val_samples).batch(batch_size).repeat()
     train_dataset = dataset.skip(num_val_samples).batch(batch_size).repeat()
 
+    # Create a ModelCheckpoint callback to save the model after each epoch
+    checkpoint_path = os.path.join(model_directory, "model_epoch_{epoch:02d}.pb")
+    checkpoint_callback = ModelCheckpoint(filepath=checkpoint_path, save_weights_only=False, save_format='tf', save_freq='epoch')
+
     # Train the model
-    model.fit(train_dataset, epochs=epochs, steps_per_epoch=100, validation_data=val_dataset, validation_steps=25)
+    model.fit(train_dataset, epochs=epochs, steps_per_epoch=100, validation_data=val_dataset, validation_steps=25, callbacks=[checkpoint_callback])  # Add the checkpoint_callback to the callbacks list
+
 
 # Save the model
 print("Saving the model...")
@@ -90,4 +96,4 @@ if use_tpu and not read_local:
     model_directory = os.path.join(gcs_bucket, model_directory)
 
 os.makedirs(model_directory, exist_ok=True)
-model.save(model_directory)
+model.save(model_directory, save_format='tf')
