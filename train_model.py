@@ -11,7 +11,7 @@ model_directory = "model"
 timesteps = 5000
 n_mels = 128
 epochs = 10
-batch_size = 4
+batch_size = 64
 use_tpu = True
 validation_split = 0.2
 
@@ -20,6 +20,18 @@ if read_local:
 else:
     gcs_bucket = "gs://knots-audio-processing"
     tfrecord_file = os.path.join(gcs_bucket, "audio_data.tfrecord")
+
+total_samples = 0
+for record in tf.data.TFRecordDataset(tfrecord_file):
+    try:
+        total_samples += 1
+    except tf.errors.OutOfRangeError:
+        break
+print(f'Total samples in the TFRecord: {total_samples}')
+
+# Calculate the steps per epoch
+steps_per_epoch = total_samples // (batch_size * (1 - validation_split))
+print(f'Steps per epoch: {steps_per_epoch}')
 
 # Environment setup
 print("Setting up the environment...")
@@ -87,7 +99,7 @@ with strategy.scope():
     checkpoint_callback = ModelCheckpoint(filepath=checkpoint_path, save_weights_only=False, save_format='tf', save_freq='epoch')
 
     # Train the model
-    model.fit(train_dataset, epochs=epochs, steps_per_epoch=100, validation_data=val_dataset, validation_steps=25, callbacks=[checkpoint_callback])  # Add the checkpoint_callback to the callbacks list
+    model.fit(train_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, validation_data=val_dataset, validation_steps=25, callbacks=[checkpoint_callback])  # Add the checkpoint_callback to the callbacks list
 
 
 # Save the model
