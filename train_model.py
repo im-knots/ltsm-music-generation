@@ -10,7 +10,7 @@ model_directory = "model"
 timesteps = 5000
 n_mels = 128
 epochs = 25
-batch_size = 1024
+batch_size = 8
 use_tpu = True
 validation_split = 0.2
 
@@ -54,9 +54,9 @@ with strategy.scope():
     # Residual connection
     lstm2_add = Add()([lstm1_ln, lstm2_ln])
 
-    lstm3 = LSTM(512, kernel_initializer='he_normal')(lstm2_add)
+    lstm3 = LSTM(512, return_sequences=True, kernel_initializer='he_normal')(lstm2_add)
     lstm3_ln = LayerNormalization()(lstm3)
-    output_layer = Dense(n_mels, activation="linear")(lstm3_ln)
+    output_layer = TimeDistributed(Dense(n_mels, activation="linear"))(lstm3_ln)
 
     model = Model(inputs=input_layer, outputs=output_layer)
     model.compile(optimizer="adam", loss="mse")
