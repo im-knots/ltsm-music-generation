@@ -83,7 +83,7 @@ with strategy.scope():
     train_dataset = dataset.skip(num_val_samples).batch(batch_size).repeat()
 
     # Create a ModelCheckpoint callback to save the model after each epoch
-    checkpoint_path = os.path.join(model_directory, "model_epoch_{epoch:02d}.pb")
+    checkpoint_path = os.path.join(gcs_bucket, model_directory, "model_epoch_{epoch:02d}")
     checkpoint_callback = ModelCheckpoint(filepath=checkpoint_path, save_weights_only=False, save_format='tf', save_freq='epoch')
 
     # Train the model
