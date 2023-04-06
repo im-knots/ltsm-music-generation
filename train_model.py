@@ -14,6 +14,7 @@ epochs = 10
 batch_size = 80
 use_tpu = True
 validation_split = 0.2
+initial_epoch = 0
 
 if read_local:
     tfrecord_file = "audio_data.tfrecord"
@@ -89,6 +90,7 @@ with strategy.scope():
 
     # Calculate the number of batches for the validation split
     num_val_samples = int(validation_split * total_samples)
+    validation_steps = num_val_samples // batch_size
 
     # Split the dataset into training and validation sets
     val_dataset = dataset.take(num_val_samples).batch(batch_size).repeat()
@@ -98,8 +100,12 @@ with strategy.scope():
     checkpoint_path = os.path.join(gcs_bucket, model_directory, "model_epoch_{epoch:02d}")
     checkpoint_callback = ModelCheckpoint(filepath=checkpoint_path, save_weights_only=False, save_format='tf', save_freq='epoch')
 
+    if initial_epoch > 0:
+        model_path = os.path.join(gcs_bucket, model_directory, f"model_epoch_{initial_epoch:02d}")
+        model = tf.keras.models.load_model(model_path)
+
     # Train the model
-    model.fit(train_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, validation_data=val_dataset, validation_steps=25, callbacks=[checkpoint_callback])  # Add the checkpoint_callback to the callbacks list
+    model.fit(train_dataset, epochs=epochs, initial_epoch=initial_epoch, steps_per_epoch=steps_per_epoch, validation_data=val_dataset, validation_steps=validation_steps, callbacks=[checkpoint_callback])
 
 
 # Save the model
