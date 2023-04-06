@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import tensorflow as tf
-from scipy.io.wavfile import write
+import wave
 import librosa
 from google.cloud import storage
 
@@ -12,7 +12,7 @@ gcs_bucket_name = "knots-audio-processing"
 tfrecord_path = os.path.join("gs://", gcs_bucket_name, "audio_data.tfrecord")
 timesteps = 5000
 n_mels = 128
-song_length = 8000  # in timesteps
+song_length = 100  # in timesteps
 n_songs = 2
 read_local = False
 write_local = False
@@ -44,7 +44,7 @@ def check_use_tpu():
 def parse_example(example_proto):
     feature_description = {
         "input": tf.io.FixedLenFeature([timesteps, n_mels], tf.float32),
-        "target": tf.io.FixedLenFeature([n_mels], tf.float32),
+        "target": tf.io.FixedLenFeature([timesteps, n_mels], tf.float32),
     }
     parsed_features = tf.io.parse_single_example(example_proto, feature_description)
     return parsed_features["input"], parsed_features["target"]
@@ -62,7 +62,6 @@ def save_to_gcs(bucket_name, file_path, destination_path):
     blob = bucket.blob(destination_path)
     blob.upload_from_filename(file_path)
     os.remove(file_path)
-
 
 if __name__ == '__main__':
     strategy = check_use_tpu()
@@ -95,19 +94,22 @@ if __name__ == '__main__':
             if step % prediction_shift == 0:
                 prediction = model.predict(seed.reshape(1, timesteps, n_mels))
                 generated_spectrogram.extend(prediction[:prediction_shift])
-                seed = np.vstack((seed[prediction_shift:], prediction[:prediction_shift]))
+                seed = np.vstack((seed[prediction_shift:], prediction[0, :prediction_shift]))
 
         generated_mel_spectrogram = np.array(generated_spectrogram).T
         generated_power_spectrogram = librosa.db_to_power(generated_mel_spectrogram)
         generated_spectrogram = librosa.feature.inverse.mel_to_stft(generated_power_spectrogram, sr=sr)
         generated_audio = librosa.griffinlim(generated_spectrogram)
 
+        output_filename = f"generated_song_{i + 1}.wav"
+        with wave.open(output_filename, 'wb') as wav_file:
+          wav_file.setparams((1, 2, sr, 0, 'NONE', 'not compressed'))
+          wav_file.writeframes((generated_audio * np.iinfo(np.int16).max).astype(np.int16).tobytes())
+
+
         if write_local:
-            output_filename = os.path.join(output_directory, f"generated_song_{i + 1}.wav")
-            write(output_filename, sr, generated_audio.astype(np.float32))
+            os.rename(output_filename, os.path.join(output_directory, output_filename))
         else:
-            output_filename = f"generated_song_{i + 1}.wav"
-            write(output_filename, sr, generated_audio.astype(np.float32))
             destination_path = os.path.join(output_directory, output_filename)
             save_to_gcs(gcs_bucket_name, output_filename, destination_path)
 
